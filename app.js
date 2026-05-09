@@ -1,4 +1,4 @@
-import { calculateRow, validateFormulaMetrics } from './formula-engine.js';
+import { calculateRow, validateFormulaMetrics, formatError } from './formula-engine.js';
 
 const STORAGE_KEY = 'formula-dashboard-data';
 
@@ -46,7 +46,7 @@ function renderMetrics() {
     
     container.innerHTML = state.metrics.map(metric => {
         const hasError = errors[metric.name];
-        const errorMsg = hasError ? (Array.isArray(errors[metric.name]) ? errors[metric.name].join('; ') : errors[metric.name]) : '';
+        const errorMsg = formatError(errors[metric.name]);
         
         return `
             <div class="metric-card${hasError ? ' error' : ''}" data-id="${metric.id}">
@@ -122,7 +122,7 @@ function renderTable() {
                     
                     if (isFormula || hasError) {
                         const value = calc.values[m.name];
-                        const errorMsg = hasRowError || (Array.isArray(metricError) ? metricError.join('; ') : metricError) || '';
+                        const errorMsg = formatError(hasRowError || metricError);
                         return `
                             <td class="${hasError ? 'error' : 'calculated'}" title="${hasError ? errorMsg : ''}">
                                 ${hasError ? '<span class="error-icon">⚠️</span>' : ''}

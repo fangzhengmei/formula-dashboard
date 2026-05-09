@@ -1,8 +1,70 @@
-export function extractVariableNames(formula) {
-    const regex = /[A-Za-z_][A-Za-z0-9_]*/g;
-    const matches = formula.match(regex) || [];
-    const reserved = ['true', 'false', 'null', 'undefined'];
-    return [...new Set(matches.filter(name => !reserved.includes(name.toLowerCase())))];
+const MATH_FUNCTIONS = ['abs', 'acos', 'asin', 'atan', 'ceil', 'cos', 'exp', 'floor', 'log', 'max', 'min', 'pow', 'round', 'sin', 'sqrt', 'tan'];
+const MATH_CONSTANTS = ['PI', 'E'];
+const RESERVED_WORDS = ['true', 'false', 'null', 'undefined', 'NaN', 'Infinity'];
+
+function isMathFunction(name) {
+    return MATH_FUNCTIONS.some(f => f.toLowerCase() === name.toLowerCase());
+}
+
+function isMathConstant(name) {
+    return MATH_CONSTANTS.some(c => c.toLowerCase() === name.toLowerCase());
+}
+
+function isReservedWord(name) {
+    return RESERVED_WORDS.some(w => w.toLowerCase() === name.toLowerCase());
+}
+
+function escapeRegExp(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function replaceMathFunctionsAndConstants(formula) {
+    let result = formula;
+    
+    const allMathNames = [...MATH_FUNCTIONS, ...MATH_CONSTANTS]
+        .sort((a, b) => b.length - a.length);
+    
+    for (const name of allMathNames) {
+        const regex = new RegExp(`\\b${name}\\b`, 'gi');
+        result = result.replace(regex, ' '.repeat(name.length));
+    }
+    
+    return result;
+}
+
+export function extractVariableNames(formula, allMetrics = []) {
+    let remaining = replaceMathFunctionsAndConstants(formula);
+    
+    const metricNames = allMetrics.map(m => m.name);
+    const sortedNames = [...metricNames].sort((a, b) => b.length - a.length);
+    
+    const found = new Set();
+    
+    for (const name of sortedNames) {
+        if (!name) continue;
+        const regex = new RegExp(escapeRegExp(name), 'g');
+        const matches = remaining.match(regex);
+        if (matches) {
+            found.add(name);
+            remaining = remaining.replace(regex, ' '.repeat(name.length));
+        }
+    }
+    
+    const fallbackRegex = /[\p{Letter}\p{Number}_]+/gu;
+    const fallbackMatches = remaining.match(fallbackRegex) || [];
+    
+    for (const match of fallbackMatches) {
+        if (!match) continue;
+        const firstChar = match[0];
+        if (!/[\p{Letter}_]/u.test(firstChar)) continue;
+        if (isReservedWord(match)) continue;
+        if (isMathFunction(match)) continue;
+        if (isMathConstant(match)) continue;
+        if (/^[0-9]+$/.test(match)) continue;
+        found.add(match);
+    }
+    
+    return [...found];
 }
 
 export function detectDependencies(metric, allMetrics) {
@@ -10,7 +72,7 @@ export function detectDependencies(metric, allMetrics) {
         return [];
     }
     
-    const variableNames = extractVariableNames(metric.formula);
+    const variableNames = extractVariableNames(metric.formula, allMetrics);
     const metricNames = new Set(allMetrics.map(m => m.name));
     
     return variableNames.filter(name => metricNames.has(name));
@@ -113,22 +175,48 @@ export function getTopologicalOrder(metrics) {
     return result;
 }
 
-export function sanitizeFormula(formula) {
+function replaceMetricNames(formula, variables, varIndexMap) {
     let result = formula;
+    const metricNames = Object.keys(variables);
+    const sortedNames = [...metricNames].sort((a, b) => b.length - a.length);
+    
+    for (const name of sortedNames) {
+        if (!name) continue;
+        const varName = `_v${varIndexMap[name]}`;
+        const regex = new RegExp(escapeRegExp(name), 'g');
+        result = result.replace(regex, varName);
+    }
+    
+    return result;
+}
+
+function sanitizeMathFunctions(formula) {
+    let result = formula;
+    
     result = result.replace(/Math\./gi, '');
-    result = result.replace(/\b(abs|acos|asin|atan|ceil|cos|exp|floor|log|max|min|pow|round|sin|sqrt|tan)\b/gi, 'Math.$1');
-    result = result.replace(/\bPI\b/gi, 'Math.PI');
-    result = result.replace(/\bE\b/gi, 'Math.E');
+    
+    for (const func of MATH_FUNCTIONS) {
+        const regex = new RegExp(`\\b${func}\\b`, 'gi');
+        result = result.replace(regex, `Math.${func}`);
+    }
+    
+    for (const constant of MATH_CONSTANTS) {
+        const regex = new RegExp(`\\b${constant}\\b`, 'gi');
+        result = result.replace(regex, `Math.${constant}`);
+    }
+    
     return result;
 }
 
 export function evaluateFormula(formula, variables, allMetrics) {
-    const variableNames = extractVariableNames(formula);
+    const variableNames = extractVariableNames(formula, allMetrics);
     const metricNames = new Set(allMetrics.map(m => m.name));
     
     for (const name of variableNames) {
-        if (metricNames.has(name) && !(name in variables)) {
-            return { success: false, error: `引用缺失: 指标 "${name}" 未赋值` };
+        if (!isMathFunction(name) && !isMathConstant(name) && !isReservedWord(name)) {
+            if (!metricNames.has(name)) {
+                return { success: false, error: `引用不存在的指标: ${name}` };
+            }
         }
     }
 
@@ -141,11 +229,30 @@ export function evaluateFormula(formula, variables, allMetrics) {
         }
     }
 
+    const metricVariables = {};
+    for (const m of allMetrics) {
+        if (m.name in variables) {
+            const val = variables[m.name];
+            if (val !== null && val !== undefined && val !== '' && !isNaN(Number(val))) {
+                metricVariables[m.name] = Number(val);
+            }
+        }
+    }
+
     try {
-        const sanitized = sanitizeFormula(formula);
-        const varKeys = Object.keys(variables);
-        const varValues = varKeys.map(k => variables[k]);
-        const fn = new Function(...varKeys, `"use strict"; return (${sanitized});`);
+        const varIndexMap = {};
+        const varKeys = Object.keys(metricVariables);
+        varKeys.forEach((key, index) => {
+            varIndexMap[key] = index;
+        });
+        
+        let processedFormula = replaceMetricNames(formula, metricVariables, varIndexMap);
+        processedFormula = sanitizeMathFunctions(processedFormula);
+        
+        const varValues = varKeys.map(k => metricVariables[k]);
+        const paramNames = varKeys.map((_, i) => `_v${i}`);
+        
+        const fn = new Function(...paramNames, `"use strict"; return (${processedFormula});`);
         const result = fn(...varValues);
         
         if (typeof result !== 'number' || !isFinite(result)) {
@@ -161,14 +268,28 @@ export function evaluateFormula(formula, variables, allMetrics) {
 export function calculateRow(rowData, metrics) {
     const circularResult = detectCircularDependency(metrics);
     const circularMetrics = new Set();
+    const circularErrors = {};
     
     if (circularResult.hasCycle) {
         circularResult.cycles.forEach(cycle => {
-            cycle.forEach(name => circularMetrics.add(name));
+            cycle.forEach(name => {
+                circularMetrics.add(name);
+                circularErrors[name] = `循环依赖: ${cycle.join(' → ')}`;
+            });
         });
     }
 
     const order = getTopologicalOrder(metrics);
+    const allMetricNames = new Set(metrics.map(m => m.name));
+    for (const name of order) {
+        allMetricNames.delete(name);
+    }
+    for (const metric of metrics) {
+        if (!order.includes(metric.name)) {
+            order.push(metric.name);
+        }
+    }
+
     const result = { ...rowData };
     const errors = {};
 
@@ -177,7 +298,7 @@ export function calculateRow(rowData, metrics) {
         if (!metric) continue;
 
         if (circularMetrics.has(metricName)) {
-            errors[metricName] = '循环依赖';
+            errors[metricName] = circularErrors[metricName] || '循环依赖';
             result[metricName] = null;
             continue;
         }
@@ -221,18 +342,21 @@ export function validateFormulaMetrics(metrics) {
     metrics.forEach(metric => {
         if (metric.type === 'formula' && metric.formula) {
             const deps = detectDependencies(metric, metrics);
-            const allVarNames = extractVariableNames(metric.formula);
+            const allVarNames = extractVariableNames(metric.formula, metrics);
             
             for (const varName of allVarNames) {
-                if (!metricNames.has(varName)) {
-                    if (!errors[metric.name]) {
-                        errors[metric.name] = [];
-                    }
-                    if (!errors[metric.name].includes(`引用不存在的指标: ${varName}`)) {
+                if (!isMathFunction(varName) && !isMathConstant(varName) && !isReservedWord(varName)) {
+                    if (!metricNames.has(varName)) {
+                        const errMsg = `引用不存在的指标: ${varName}`;
+                        if (!errors[metric.name]) {
+                            errors[metric.name] = [];
+                        }
                         if (typeof errors[metric.name] === 'string') {
                             errors[metric.name] = [errors[metric.name]];
                         }
-                        errors[metric.name].push(`引用不存在的指标: ${varName}`);
+                        if (!errors[metric.name].includes(errMsg)) {
+                            errors[metric.name].push(errMsg);
+                        }
                     }
                 }
             }
@@ -240,4 +364,11 @@ export function validateFormulaMetrics(metrics) {
     });
 
     return errors;
+}
+
+export function formatError(error) {
+    if (Array.isArray(error)) {
+        return error.join('; ');
+    }
+    return error || '';
 }

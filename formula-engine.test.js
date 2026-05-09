@@ -4,25 +4,74 @@ import {
     detectDependencies,
     detectCircularDependency,
     getTopologicalOrder,
-    sanitizeFormula,
     evaluateFormula,
     calculateRow,
-    validateFormulaMetrics
+    validateFormulaMetrics,
+    formatError
 } from './formula-engine.js';
 
 describe('extractVariableNames', () => {
-    it('提取公式中的变量名', () => {
-        expect(extractVariableNames('a + b')).toEqual(['a', 'b']);
-        expect(extractVariableNames('收入 - 成本')).toEqual(['收入', '成本']);
+    it('提取公式中的英文变量名', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'input' }
+        ];
+        expect(extractVariableNames('a + b', metrics)).toEqual(expect.arrayContaining(['a', 'b']));
+    });
+
+    it('提取公式中的中文变量名', () => {
+        const metrics = [
+            { name: '收入', type: 'input' },
+            { name: '成本', type: 'input' }
+        ];
+        expect(extractVariableNames('收入 - 成本', metrics)).toEqual(expect.arrayContaining(['收入', '成本']));
+    });
+
+    it('正确提取包含中文的复杂公式', () => {
+        const metrics = [
+            { name: '销售收入', type: 'input' },
+            { name: '销售成本', type: 'input' },
+            { name: '运营费用', type: 'input' }
+        ];
+        const vars = extractVariableNames('(销售收入 - 销售成本) * 0.8 - 运营费用', metrics);
+        expect(vars).toEqual(expect.arrayContaining(['销售收入', '销售成本', '运营费用']));
+    });
+
+    it('处理名称前缀重叠的情况', () => {
+        const metrics = [
+            { name: '收入', type: 'input' },
+            { name: '总收入', type: 'input' }
+        ];
+        const vars = extractVariableNames('总收入 + 收入', metrics);
+        expect(vars).toEqual(expect.arrayContaining(['收入', '总收入']));
     });
 
     it('去重变量名', () => {
-        expect(extractVariableNames('a + a * b')).toEqual(['a', 'b']);
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'input' }
+        ];
+        const vars = extractVariableNames('a + a * b', metrics);
+        expect(vars).toEqual(expect.arrayContaining(['a', 'b']));
+        expect(vars.length).toBe(2);
     });
 
     it('过滤保留字', () => {
-        expect(extractVariableNames('a + true')).toEqual(['a']);
-        expect(extractVariableNames('false || null')).toEqual([]);
+        const metrics = [{ name: 'a', type: 'input' }];
+        expect(extractVariableNames('a + true', metrics)).toEqual(expect.arrayContaining(['a']));
+        expect(extractVariableNames('false || null', [])).toEqual([]);
+    });
+
+    it('不将数学函数识别为变量', () => {
+        const metrics = [{ name: 'a', type: 'input' }];
+        const vars = extractVariableNames('sqrt(a) + abs(-5)', metrics);
+        expect(vars).toEqual(['a']);
+    });
+
+    it('不将数学常量识别为变量', () => {
+        const metrics = [{ name: 'r', type: 'input' }];
+        const vars = extractVariableNames('2 * PI * r', metrics);
+        expect(vars).toEqual(['r']);
     });
 });
 
@@ -35,7 +84,8 @@ describe('detectDependencies', () => {
 
     it('检测公式指标的依赖', () => {
         const profit = metrics.find(m => m.name === '利润');
-        expect(detectDependencies(profit, metrics)).toEqual(['收入', '成本']);
+        const deps = detectDependencies(profit, metrics);
+        expect(deps).toEqual(expect.arrayContaining(['收入', '成本']));
     });
 
     it('输入指标无依赖', () => {
@@ -58,10 +108,10 @@ describe('detectCircularDependency', () => {
         expect(result.hasCycle).toBe(true);
     });
 
-    it('检测双向循环', () => {
+    it('检测中文指标名的双向循环', () => {
         const metrics = [
-            { name: 'a', type: 'formula', formula: 'b + 1' },
-            { name: 'b', type: 'formula', formula: 'a + 1' }
+            { name: '甲', type: 'formula', formula: '乙 + 1' },
+            { name: '乙', type: 'formula', formula: '甲 + 1' }
         ];
         const result = detectCircularDependency(metrics);
         expect(result.hasCycle).toBe(true);
@@ -110,22 +160,15 @@ describe('getTopologicalOrder', () => {
         expect(order.indexOf('a')).toBeLessThan(order.indexOf('b'));
         expect(order.indexOf('b')).toBeLessThan(order.indexOf('c'));
     });
-});
 
-describe('sanitizeFormula', () => {
-    it('转换数学函数', () => {
-        expect(sanitizeFormula('sqrt(4)')).toContain('Math.sqrt');
-        expect(sanitizeFormula('abs(-5)')).toContain('Math.abs');
-        expect(sanitizeFormula('pow(2, 3)')).toContain('Math.pow');
-    });
-
-    it('转换数学常量', () => {
-        expect(sanitizeFormula('PI')).toBe('Math.PI');
-        expect(sanitizeFormula('E')).toBe('Math.E');
-    });
-
-    it('处理重复的 Math. 前缀', () => {
-        expect(sanitizeFormula('Math.sqrt(4)')).toContain('Math.sqrt');
+    it('包含所有指标（包括循环依赖的）', () => {
+        const metrics = [
+            { name: 'a', type: 'formula', formula: 'b' },
+            { name: 'b', type: 'formula', formula: 'a' },
+            { name: 'c', type: 'input' }
+        ];
+        const order = getTopologicalOrder(metrics);
+        expect(order).toContain('c');
     });
 });
 
@@ -141,14 +184,37 @@ describe('evaluateFormula', () => {
         expect(result.value).toBe(5);
     });
 
+    it('正确计算中文变量名的公式', () => {
+        const cnMetrics = [
+            { name: '收入', type: 'input' },
+            { name: '成本', type: 'input' }
+        ];
+        const result = evaluateFormula('收入 - 成本', { 收入: 1000, 成本: 600 }, cnMetrics);
+        expect(result.success).toBe(true);
+        expect(result.value).toBe(400);
+    });
+
     it('正确计算复杂公式', () => {
         const result = evaluateFormula('(a + b) * 2 - 1', { a: 2, b: 3 }, metrics);
         expect(result.success).toBe(true);
         expect(result.value).toBe(9);
     });
 
-    it('检测引用缺失的变量', () => {
-        const result = evaluateFormula('a + b + c', { a: 1 }, metrics);
+    it('引用不存在的指标返回明确的错误', () => {
+        const result = evaluateFormula('a + 不存在', { a: 1 }, metrics);
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('引用不存在的指标: 不存在');
+    });
+
+    it('引用不存在的中文指标返回明确的错误', () => {
+        const cnMetrics = [{ name: '收入', type: 'input' }];
+        const result = evaluateFormula('收入 - 成本', { 收入: 1000 }, cnMetrics);
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('引用不存在的指标: 成本');
+    });
+
+    it('检测引用缺失的变量值', () => {
+        const result = evaluateFormula('a + b', { a: 1 }, metrics);
         expect(result.success).toBe(false);
         expect(result.error).toContain('引用缺失');
     });
@@ -159,7 +225,7 @@ describe('evaluateFormula', () => {
     });
 
     it('检测语法错误', () => {
-        const result = evaluateFormula('a + + b', { a: 1, b: 2 }, metrics);
+        const result = evaluateFormula('a + b )', { a: 1, b: 2 }, metrics);
         expect(result.success).toBe(false);
     });
 
@@ -197,7 +263,7 @@ describe('calculateRow', () => {
         expect(result.values['c']).toBe(11);
     });
 
-    it('循环依赖返回错误', () => {
+    it('循环依赖返回循环依赖错误信息', () => {
         const metrics = [
             { name: 'a', type: 'formula', formula: 'b + 1' },
             { name: 'b', type: 'formula', formula: 'a + 1' }
@@ -205,20 +271,36 @@ describe('calculateRow', () => {
         const rowData = {};
         const result = calculateRow(rowData, metrics);
         
-        expect(result.errors['a']).toBe('循环依赖');
-        expect(result.errors['b']).toBe('循环依赖');
+        expect(result.errors['a']).toBeDefined();
+        expect(result.errors['a']).toContain('循环依赖');
+        expect(result.errors['b']).toBeDefined();
+        expect(result.errors['b']).toContain('循环依赖');
     });
 
-    it('引用缺失返回错误', () => {
+    it('中文指标名的循环依赖返回详细错误信息', () => {
+        const metrics = [
+            { name: '甲', type: 'formula', formula: '乙 + 1' },
+            { name: '乙', type: 'formula', formula: '甲 + 1' }
+        ];
+        const rowData = {};
+        const result = calculateRow(rowData, metrics);
+        
+        expect(result.errors['甲']).toBeDefined();
+        expect(result.errors['甲']).toContain('甲 → 乙 → 甲');
+        expect(result.errors['乙']).toBeDefined();
+        expect(result.errors['乙']).toContain('甲 → 乙 → 甲');
+    });
+
+    it('引用不存在的指标返回明确的错误', () => {
         const metrics = [
             { name: 'a', type: 'input' },
-            { name: 'b', type: 'formula', formula: 'a + c' }
+            { name: 'b', type: 'formula', formula: 'a + 不存在' }
         ];
         const rowData = { a: 1 };
         const result = calculateRow(rowData, metrics);
         
         expect(result.errors['b']).toBeDefined();
-        expect(result.errors['b']).toContain('引用不存在');
+        expect(result.errors['b']).toBe('引用不存在的指标: 不存在');
     });
 
     it('输入值为字符串数字时正确转换', () => {
@@ -230,6 +312,19 @@ describe('calculateRow', () => {
         const result = calculateRow(rowData, metrics);
         
         expect(result.values['b']).toBe(20);
+    });
+
+    it('循环依赖的指标被包含在结果中', () => {
+        const metrics = [
+            { name: 'a', type: 'formula', formula: 'b' },
+            { name: 'b', type: 'formula', formula: 'a' },
+            { name: 'c', type: 'input' }
+        ];
+        const rowData = { c: 5 };
+        const result = calculateRow(rowData, metrics);
+        
+        expect(result.errors['a']).toBeDefined();
+        expect(result.errors['b']).toBeDefined();
     });
 });
 
@@ -276,6 +371,25 @@ describe('validateFormulaMetrics', () => {
     });
 });
 
+describe('formatError', () => {
+    it('字符串错误原样返回', () => {
+        expect(formatError('循环依赖')).toBe('循环依赖');
+    });
+
+    it('数组错误用分号连接', () => {
+        expect(formatError(['循环依赖: a → b → a', '引用不存在的指标: c']))
+            .toBe('循环依赖: a → b → a; 引用不存在的指标: c');
+    });
+
+    it('undefined 返回空字符串', () => {
+        expect(formatError(undefined)).toBe('');
+    });
+
+    it('null 返回空字符串', () => {
+        expect(formatError(null)).toBe('');
+    });
+});
+
 describe('综合测试', () => {
     it('完整示例：收入-成本-利润-利润率', () => {
         const metrics = [
@@ -304,5 +418,38 @@ describe('综合测试', () => {
         
         expect(row1.values['销售额']).toBe(50);
         expect(row2.values['销售额']).toBe(160);
+    });
+
+    it('中文指标名完整工作流', () => {
+        const metrics = [
+            { name: '产品销量', type: 'input' },
+            { name: '产品单价', type: 'input' },
+            { name: '销售成本', type: 'input' },
+            { name: '销售收入', type: 'formula', formula: '产品销量 * 产品单价' },
+            { name: '销售利润', type: 'formula', formula: '销售收入 - 销售成本' }
+        ];
+        
+        const rowData = { 产品销量: 100, 产品单价: 50, 销售成本: 3000 };
+        const result = calculateRow(rowData, metrics);
+        
+        expect(result.values['销售收入']).toBe(5000);
+        expect(result.values['销售利润']).toBe(2000);
+        expect(Object.keys(result.errors).length).toBe(0);
+    });
+
+    it('复杂场景：循环依赖 + 正常指标共存', () => {
+        const metrics = [
+            { name: '基础值', type: 'input' },
+            { name: '甲', type: 'formula', formula: '乙 + 1' },
+            { name: '乙', type: 'formula', formula: '甲 + 1' },
+            { name: '正常指标', type: 'formula', formula: '基础值 * 2' }
+        ];
+        
+        const rowData = { 基础值: 10 };
+        const result = calculateRow(rowData, metrics);
+        
+        expect(result.errors['甲']).toBeDefined();
+        expect(result.errors['乙']).toBeDefined();
+        expect(result.values['正常指标']).toBe(20);
     });
 });
