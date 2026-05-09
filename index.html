@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>轻量公式看板</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>轻量公式看板</h1>
+        
+        <div class="section">
+            <h2>指标配置</h2>
+            <div class="metric-list" id="metricList"></div>
+            <button class="btn btn-primary" id="addMetricBtn">+ 添加指标</button>
+        </div>
+
+        <div class="section">
+            <h2>数据行</h2>
+            <div class="table-container">
+                <table id="dataTable">
+                    <thead id="tableHead"></thead>
+                    <tbody id="tableBody"></tbody>
+                </table>
+            </div>
+            <button class="btn btn-primary" id="addRowBtn">+ 添加数据行</button>
+        </div>
+
+        <div class="section">
+            <div class="actions">
+                <button class="btn btn-secondary" id="clearDataBtn">清空所有数据</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>

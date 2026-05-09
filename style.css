@@ -1,0 +1,241 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background-color: #f5f7fa;
+    padding: 20px;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+h1 {
+    color: #2c3e50;
+    margin-bottom: 30px;
+    text-align: center;
+}
+
+.section {
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.section h2 {
+    color: #34495e;
+    margin-bottom: 15px;
+    font-size: 1.25rem;
+}
+
+.metric-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    margin-bottom: 15px;
+}
+
+.metric-card {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    padding: 15px;
+    min-width: 250px;
+    flex: 1;
+}
+
+.metric-card.error {
+    border-color: #dc3545;
+    background-color: #fff5f5;
+}
+
+.metric-card .metric-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.metric-card .metric-name {
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.metric-card .metric-type {
+    font-size: 0.8rem;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: #e3f2fd;
+    color: #1976d2;
+}
+
+.metric-card .metric-type.formula {
+    background: #fff3e0;
+    color: #e65100;
+}
+
+.metric-card .formula-display {
+    font-family: monospace;
+    background: #fff;
+    padding: 8px;
+    border-radius: 4px;
+    border: 1px solid #dee2e6;
+    font-size: 0.9rem;
+    color: #495057;
+    margin-bottom: 10px;
+}
+
+.metric-card .error-message {
+    color: #dc3545;
+    font-size: 0.85rem;
+    margin-top: 5px;
+}
+
+.metric-card .metric-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.form-group {
+    margin-bottom: 10px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 0.85rem;
+    color: #6c757d;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: #007bff;
+    box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+.btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+}
+
+.btn-primary {
+    background: #007bff;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #0069d9;
+}
+
+.btn-danger {
+    background: #dc3545;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #c82333;
+}
+
+.btn-secondary {
+    background: #6c757d;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background: #5a6268;
+}
+
+.table-container {
+    overflow-x: auto;
+    margin-bottom: 15px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 600px;
+}
+
+th, td {
+    padding: 10px;
+    text-align: left;
+    border-bottom: 1px solid #dee2e6;
+}
+
+th {
+    background: #f8f9fa;
+    font-weight: 600;
+    color: #343a40;
+}
+
+td input {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+}
+
+td input:focus {
+    outline: none;
+    border-color: #007bff;
+}
+
+td.calculated {
+    background: #e8f5e9;
+}
+
+td.error {
+    background: #ffebee;
+    color: #c62828;
+}
+
+td .error-icon {
+    margin-right: 5px;
+}
+
+td.calculated .value {
+    font-weight: 500;
+    color: #2e7d32;
+}
+
+td.error .value {
+    color: #c62828;
+}
+
+.actions {
+    display: flex;
+    gap: 10px;
+}
+
+@media (max-width: 768px) {
+    .metric-list {
+        flex-direction: column;
+    }
+    
+    .metric-card {
+        min-width: 100%;
+    }
+}
