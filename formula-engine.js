@@ -18,6 +18,34 @@ function escapeRegExp(string) {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function getBoundaryRegex(name, flags = 'g') {
+    const escaped = escapeRegExp(name);
+    return new RegExp(`(?<=^|[^\\p{L}\\p{N}_])${escaped}(?=[^\\p{L}\\p{N}_]|$)`, flags + 'u');
+}
+
+function hasBoundaryMatch(formula, name) {
+    const regex = getBoundaryRegex(name);
+    return regex.test(formula);
+}
+
+function replaceWithBoundary(formula, name, replacement) {
+    const regex = getBoundaryRegex(name);
+    return formula.replace(regex, replacement);
+}
+
+function replaceAllWithBoundary(formula, name, replacement) {
+    let result = formula;
+    const regex = getBoundaryRegex(name);
+    let match;
+    while ((match = regex.exec(result)) !== null) {
+        const before = result.slice(0, match.index);
+        const after = result.slice(match.index + name.length);
+        result = before + replacement + after;
+        regex.lastIndex = 0;
+    }
+    return result;
+}
+
 function replaceMathFunctionsAndConstants(formula) {
     let result = formula;
     
@@ -25,8 +53,7 @@ function replaceMathFunctionsAndConstants(formula) {
         .sort((a, b) => b.length - a.length);
     
     for (const name of allMathNames) {
-        const regex = new RegExp(`\\b${name}\\b`, 'gi');
-        result = result.replace(regex, ' '.repeat(name.length));
+        result = replaceAllWithBoundary(result, name, ' '.repeat(name.length));
     }
     
     return result;
@@ -42,11 +69,9 @@ export function extractVariableNames(formula, allMetrics = []) {
     
     for (const name of sortedNames) {
         if (!name) continue;
-        const regex = new RegExp(escapeRegExp(name), 'g');
-        const matches = remaining.match(regex);
-        if (matches) {
+        if (hasBoundaryMatch(remaining, name)) {
             found.add(name);
-            remaining = remaining.replace(regex, ' '.repeat(name.length));
+            remaining = replaceAllWithBoundary(remaining, name, ' '.repeat(name.length));
         }
     }
     
@@ -184,15 +209,19 @@ function protectMathNames(formula) {
         .sort((a, b) => b.length - a.length);
     
     for (const name of allMathNames) {
-        const regex = new RegExp(`\\b${name}\\b`, 'gi');
-        const matches = result.match(regex);
-        if (matches) {
-            for (const match of matches) {
+        if (hasBoundaryMatch(result, name)) {
+            let tempResult = result;
+            const regex = getBoundaryRegex(name);
+            let match;
+            while ((match = regex.exec(tempResult)) !== null) {
+                const matchedText = match[0];
                 const placeholder = `__MATH_${placeholderIndex}__`;
-                protections.push({ placeholder, original: match });
-                result = result.replace(new RegExp(escapeRegExp(match), 'g'), placeholder);
+                protections.push({ placeholder, original: name });
+                tempResult = replaceWithBoundary(tempResult, name, placeholder);
                 placeholderIndex++;
+                regex.lastIndex = 0;
             }
+            result = tempResult;
         }
     }
     
@@ -228,8 +257,14 @@ function processFormulaForEvaluation(formula, variables, varIndexMap, allMetrics
     for (const name of sortedNames) {
         if (!name) continue;
         const varName = `_v${varIndexMap[name]}`;
-        const regex = new RegExp(escapeRegExp(name), 'g');
-        result = result.replace(regex, varName);
+        let tempResult = result;
+        const regex = getBoundaryRegex(name);
+        let match;
+        while ((match = regex.exec(tempResult)) !== null) {
+            tempResult = replaceWithBoundary(tempResult, name, varName);
+            regex.lastIndex = 0;
+        }
+        result = tempResult;
     }
     
     result = restoreMathNamesWithMathPrefix(result, protections);

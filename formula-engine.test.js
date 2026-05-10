@@ -567,3 +567,145 @@ describe('数学函数与单字母指标名回归测试', () => {
         expect(result.value).toBeCloseTo(6);
     });
 });
+
+describe('变量识别边界回归测试', () => {
+    it('公式包含 data 时不被拆碎（指标名 a 存在）', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'formula', formula: 'a + data' }
+        ];
+        const result = evaluateFormula('a + data', { a: 5 }, metrics);
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('引用不存在的指标: data');
+    });
+
+    it('公式包含 aa 时返回错误而不是拆为 a+a', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'formula', formula: 'a + aa' }
+        ];
+        const result = evaluateFormula('a + aa', { a: 5 }, metrics);
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('引用不存在的指标: aa');
+    });
+
+    it('公式包含 maxa 时不被误拆（max 是函数 + a 是指标）', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'x', type: 'input' },
+            { name: 'b', type: 'formula', formula: 'max(a, x) + maxa' }
+        ];
+        const result = evaluateFormula('max(a, x) + maxa', { a: 5, x: 3 }, metrics);
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('引用不存在的指标: maxa');
+    });
+
+    it('公式包含 absa 时不被误拆（abs 是函数 + a 是指标）', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'formula', formula: 'abs(a) + absa' }
+        ];
+        const result = evaluateFormula('abs(a) + absa', { a: -5 }, metrics);
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('引用不存在的指标: absa');
+    });
+
+    it('extractVariableNames 正确提取 data 作为完整变量', () => {
+        const metrics = [
+            { name: 'a', type: 'input' }
+        ];
+        const vars = extractVariableNames('a + data', metrics);
+        expect(vars).toContain('a');
+        expect(vars).toContain('data');
+    });
+
+    it('extractVariableNames 正确提取 aa 作为完整变量', () => {
+        const metrics = [
+            { name: 'a', type: 'input' }
+        ];
+        const vars = extractVariableNames('a + aa', metrics);
+        expect(vars).toContain('a');
+        expect(vars).toContain('aa');
+    });
+
+    it('单字母指标名 + 中文指标名共存时的边界', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: '收入', type: 'input' },
+            { name: 'aa', type: 'formula', formula: 'a + 收入' }
+        ];
+        const vars = extractVariableNames('a + 收入 + aaa', metrics);
+        expect(vars).toContain('a');
+        expect(vars).toContain('收入');
+        expect(vars).toContain('aaa');
+    });
+
+    it('calculateRow 中不存在的变量返回清晰错误', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'formula', formula: 'a + unknownVar' }
+        ];
+        const result = calculateRow({ a: 10 }, metrics);
+        expect(result.errors['b']).toBeDefined();
+        expect(result.errors['b']).toBe('引用不存在的指标: unknownVar');
+    });
+
+    it('复杂边界：a + data + aa + maxa', () => {
+        const metrics = [
+            { name: 'a', type: 'input' }
+        ];
+        const vars = extractVariableNames('a + data + aa + maxa', metrics);
+        expect(vars).toContain('a');
+        expect(vars).toContain('data');
+        expect(vars).toContain('aa');
+        expect(vars).toContain('maxa');
+    });
+
+    it('边界匹配：指标名在开头', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'formula', formula: 'a * 2' }
+        ];
+        const vars = extractVariableNames('a * 2', metrics);
+        expect(vars).toEqual(['a']);
+    });
+
+    it('边界匹配：指标名在结尾', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'formula', formula: '2 * a' }
+        ];
+        const vars = extractVariableNames('2 * a', metrics);
+        expect(vars).toEqual(['a']);
+    });
+
+    it('边界匹配：指标名被括号包围', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'formula', formula: '(a)' }
+        ];
+        const vars = extractVariableNames('(a)', metrics);
+        expect(vars).toEqual(['a']);
+    });
+
+    it('边界匹配：指标名被逗号分隔', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'input' },
+            { name: 'c', type: 'formula', formula: 'max(a, b)' }
+        ];
+        const vars = extractVariableNames('max(a, b)', metrics);
+        expect(vars).toContain('a');
+        expect(vars).toContain('b');
+    });
+
+    it('calculateRow 中 aa 被视为不存在的指标', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'result', type: 'formula', formula: 'a + aa' }
+        ];
+        const result = calculateRow({ a: 10 }, metrics);
+        expect(result.errors['result']).toBeDefined();
+        expect(result.errors['result']).toContain('aa');
+    });
+});
