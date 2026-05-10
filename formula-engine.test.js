@@ -453,3 +453,117 @@ describe('综合测试', () => {
         expect(result.values['正常指标']).toBe(20);
     });
 });
+
+describe('数学函数与单字母指标名回归测试', () => {
+    it('单字母指标名 a + sqrt 函数', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'formula', formula: 'sqrt(a)' }
+        ];
+        const result = calculateRow({ a: 16 }, metrics);
+        expect(result.values['b']).toBe(4);
+        expect(result.errors['b']).toBeUndefined();
+    });
+
+    it('单字母指标名 a + abs 函数', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'formula', formula: 'abs(a)' }
+        ];
+        const result = calculateRow({ a: -5 }, metrics);
+        expect(result.values['b']).toBe(5);
+    });
+
+    it('单字母指标名 a + max 函数', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'x', type: 'input' },
+            { name: 'b', type: 'formula', formula: 'max(a, x)' }
+        ];
+        const result = calculateRow({ a: 10, x: 5 }, metrics);
+        expect(result.values['b']).toBe(10);
+    });
+
+    it('单字母指标名 n + sin/tan 函数', () => {
+        const metrics = [
+            { name: 'n', type: 'input' },
+            { name: 't', type: 'input' },
+            { name: 'result', type: 'formula', formula: 'sin(n) + tan(t)' }
+        ];
+        const result = evaluateFormula('sin(n) + tan(t)', { n: 0, t: 0 }, metrics);
+        expect(result.success).toBe(true);
+        expect(result.value).toBeCloseTo(0);
+    });
+
+    it('单字母指标名与多个数学函数组合', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'input' },
+            { name: 'c', type: 'formula', formula: 'sqrt(abs(a)) + max(a, b) * min(a, b)' }
+        ];
+        const result = calculateRow({ a: 16, b: 9 }, metrics);
+        expect(result.values['c']).toBe(4 + 16 * 9);
+    });
+
+    it('单字母指标名 + pow 函数', () => {
+        const metrics = [
+            { name: 'o', type: 'input' },
+            { name: 'w', type: 'input' },
+            { name: 'result', type: 'formula', formula: 'pow(o, w)' }
+        ];
+        const result = calculateRow({ o: 2, w: 3 }, metrics);
+        expect(result.values['result']).toBe(8);
+    });
+
+    it('单字母指标名 + round/floor/ceil 函数', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'formula', formula: 'round(a)' },
+            { name: 'c', type: 'formula', formula: 'floor(a)' },
+            { name: 'd', type: 'formula', formula: 'ceil(a)' }
+        ];
+        const result = calculateRow({ a: 3.7 }, metrics);
+        expect(result.values['b']).toBe(4);
+        expect(result.values['c']).toBe(3);
+        expect(result.values['d']).toBe(4);
+    });
+
+    it('单字母指标名 + 数学常量 PI 和 E', () => {
+        const metrics = [
+            { name: 'r', type: 'input' },
+            { name: 'circumference', type: 'formula', formula: '2 * PI * r' },
+            { name: 'exponential', type: 'formula', formula: 'pow(E, r)' }
+        ];
+        const result = calculateRow({ r: 1 }, metrics);
+        expect(result.values['circumference']).toBeCloseTo(2 * Math.PI);
+        expect(result.values['exponential']).toBeCloseTo(Math.E);
+    });
+
+    it('单字母指标名 a + 复杂公式：(a + abs(a)) / 2', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'formula', formula: '(a + abs(a)) / 2' }
+        ];
+        const result1 = calculateRow({ a: -10 }, metrics);
+        const result2 = calculateRow({ a: 10 }, metrics);
+        expect(result1.values['b']).toBe(0);
+        expect(result2.values['b']).toBe(10);
+    });
+
+    it('多单字母指标 + 多数学函数：sqrt(a) * b) + sin(x) * cos(y)', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'input' },
+            { name: 'x', type: 'input' },
+            { name: 'y', type: 'input' },
+            { name: 'result', type: 'formula', formula: 'sqrt(a * b) + sin(x) * cos(y)' }
+        ];
+        const result = evaluateFormula(
+            'sqrt(a * b) + sin(x) * cos(y)',
+            { a: 4, b: 9, x: 0, y: 0 },
+            metrics
+        );
+        expect(result.success).toBe(true);
+        expect(result.value).toBeCloseTo(6);
+    });
+});

@@ -175,10 +175,55 @@ export function getTopologicalOrder(metrics) {
     return result;
 }
 
-function replaceMetricNames(formula, variables, varIndexMap) {
+function protectMathNames(formula) {
+    const protections = [];
     let result = formula;
-    const metricNames = Object.keys(variables);
-    const sortedNames = [...metricNames].sort((a, b) => b.length - a.length);
+    let placeholderIndex = 0;
+    
+    const allMathNames = [...MATH_FUNCTIONS, ...MATH_CONSTANTS]
+        .sort((a, b) => b.length - a.length);
+    
+    for (const name of allMathNames) {
+        const regex = new RegExp(`\\b${name}\\b`, 'gi');
+        const matches = result.match(regex);
+        if (matches) {
+            for (const match of matches) {
+                const placeholder = `__MATH_${placeholderIndex}__`;
+                protections.push({ placeholder, original: match });
+                result = result.replace(new RegExp(escapeRegExp(match), 'g'), placeholder);
+                placeholderIndex++;
+            }
+        }
+    }
+    
+    return { formula: result, protections };
+}
+
+function restoreMathNamesWithMathPrefix(formula, protections) {
+    let result = formula;
+    
+    for (const { placeholder, original } of protections) {
+        const lowerOriginal = original.toLowerCase();
+        if (MATH_FUNCTIONS.some(f => f.toLowerCase() === lowerOriginal)) {
+            const correctCase = MATH_FUNCTIONS.find(f => f.toLowerCase() === lowerOriginal);
+            result = result.replace(new RegExp(escapeRegExp(placeholder), 'g'), `Math.${correctCase}`);
+        } else if (MATH_CONSTANTS.some(c => c.toLowerCase() === lowerOriginal)) {
+            const correctCase = MATH_CONSTANTS.find(c => c.toLowerCase() === lowerOriginal);
+            result = result.replace(new RegExp(escapeRegExp(placeholder), 'g'), `Math.${correctCase}`);
+        }
+    }
+    
+    return result;
+}
+
+function processFormulaForEvaluation(formula, variables, varIndexMap, allMetrics) {
+    const { formula: protectedFormula, protections } = protectMathNames(formula);
+    
+    let result = protectedFormula;
+    
+    const metricNames = allMetrics.map(m => m.name);
+    const relevantMetricNames = metricNames.filter(name => Object.keys(variables).includes(name));
+    const sortedNames = [...relevantMetricNames].sort((a, b) => b.length - a.length);
     
     for (const name of sortedNames) {
         if (!name) continue;
@@ -186,6 +231,8 @@ function replaceMetricNames(formula, variables, varIndexMap) {
         const regex = new RegExp(escapeRegExp(name), 'g');
         result = result.replace(regex, varName);
     }
+    
+    result = restoreMathNamesWithMathPrefix(result, protections);
     
     return result;
 }
@@ -195,15 +242,8 @@ function sanitizeMathFunctions(formula) {
     
     result = result.replace(/Math\./gi, '');
     
-    for (const func of MATH_FUNCTIONS) {
-        const regex = new RegExp(`\\b${func}\\b`, 'gi');
-        result = result.replace(regex, `Math.${func}`);
-    }
-    
-    for (const constant of MATH_CONSTANTS) {
-        const regex = new RegExp(`\\b${constant}\\b`, 'gi');
-        result = result.replace(regex, `Math.${constant}`);
-    }
+    const { formula: protectedFormula, protections } = protectMathNames(result);
+    result = restoreMathNamesWithMathPrefix(protectedFormula, protections);
     
     return result;
 }
@@ -246,8 +286,7 @@ export function evaluateFormula(formula, variables, allMetrics) {
             varIndexMap[key] = index;
         });
         
-        let processedFormula = replaceMetricNames(formula, metricVariables, varIndexMap);
-        processedFormula = sanitizeMathFunctions(processedFormula);
+        let processedFormula = processFormulaForEvaluation(formula, metricVariables, varIndexMap, allMetrics);
         
         const varValues = varKeys.map(k => metricVariables[k]);
         const paramNames = varKeys.map((_, i) => `_v${i}`);
