@@ -23,14 +23,36 @@ function getBoundaryRegex(name, flags = 'g') {
     return new RegExp(`(?<=^|[^\\p{L}\\p{N}_])${escaped}(?=[^\\p{L}\\p{N}_]|$)`, flags + 'u');
 }
 
+function getBoundaryRegexCaseInsensitive(name) {
+    const escaped = escapeRegExp(name);
+    return new RegExp(`(?<=^|[^\\p{L}\\p{N}_])${escaped}(?=[^\\p{L}\\p{N}_]|$)`, 'gui');
+}
+
 function hasBoundaryMatch(formula, name) {
-    const regex = getBoundaryRegex(name);
+    const regex = getBoundaryRegexCaseInsensitive(name);
     return regex.test(formula);
+}
+
+function stripMathPrefix(formula) {
+    return formula.replace(/Math\./gi, '');
 }
 
 function replaceWithBoundary(formula, name, replacement) {
     const regex = getBoundaryRegex(name);
     return formula.replace(regex, replacement);
+}
+
+function replaceWithBoundaryCaseInsensitive(formula, name, replacement) {
+    const regex = getBoundaryRegexCaseInsensitive(name);
+    let result = formula;
+    let match;
+    while ((match = regex.exec(result)) !== null) {
+        const before = result.slice(0, match.index);
+        const after = result.slice(match.index + match[0].length);
+        result = before + replacement + after;
+        regex.lastIndex = 0;
+    }
+    return result;
 }
 
 function replaceAllWithBoundary(formula, name, replacement) {
@@ -47,13 +69,13 @@ function replaceAllWithBoundary(formula, name, replacement) {
 }
 
 function replaceMathFunctionsAndConstants(formula) {
-    let result = formula;
+    let result = stripMathPrefix(formula);
     
     const allMathNames = [...MATH_FUNCTIONS, ...MATH_CONSTANTS]
         .sort((a, b) => b.length - a.length);
     
     for (const name of allMathNames) {
-        result = replaceAllWithBoundary(result, name, ' '.repeat(name.length));
+        result = replaceWithBoundaryCaseInsensitive(result, name, ' '.repeat(name.length));
     }
     
     return result;
@@ -202,7 +224,7 @@ export function getTopologicalOrder(metrics) {
 
 function protectMathNames(formula) {
     const protections = [];
-    let result = formula;
+    let result = stripMathPrefix(formula);
     let placeholderIndex = 0;
     
     const allMathNames = [...MATH_FUNCTIONS, ...MATH_CONSTANTS]
@@ -210,14 +232,14 @@ function protectMathNames(formula) {
     
     for (const name of allMathNames) {
         if (hasBoundaryMatch(result, name)) {
-            let tempResult = result;
-            const regex = getBoundaryRegex(name);
+            const regex = getBoundaryRegexCaseInsensitive(name);
             let match;
+            let tempResult = result;
             while ((match = regex.exec(tempResult)) !== null) {
                 const matchedText = match[0];
                 const placeholder = `__MATH_${placeholderIndex}__`;
-                protections.push({ placeholder, original: name });
-                tempResult = replaceWithBoundary(tempResult, name, placeholder);
+                protections.push({ placeholder, original: matchedText });
+                tempResult = replaceWithBoundaryCaseInsensitive(tempResult, matchedText, placeholder);
                 placeholderIndex++;
                 regex.lastIndex = 0;
             }

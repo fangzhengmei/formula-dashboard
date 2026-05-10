@@ -709,3 +709,172 @@ describe('变量识别边界回归测试', () => {
         expect(result.errors['result']).toContain('aa');
     });
 });
+
+describe('数学函数兼容性回归测试', () => {
+    it('Math.sqrt(a) 带 Math 前缀', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'formula', formula: 'Math.sqrt(a)' }
+        ];
+        const result = calculateRow({ a: 16 }, metrics);
+        expect(result.values['b']).toBe(4);
+        expect(result.errors['b']).toBeUndefined();
+    });
+
+    it('math.sqrt(a) 小写 math 前缀', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'formula', formula: 'math.sqrt(a)' }
+        ];
+        const result = calculateRow({ a: 16 }, metrics);
+        expect(result.values['b']).toBe(4);
+    });
+
+    it('SQRT(a) 全大写函数名', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'formula', formula: 'SQRT(a)' }
+        ];
+        const result = calculateRow({ a: 16 }, metrics);
+        expect(result.values['b']).toBe(4);
+    });
+
+    it('Sqrt(a) 首字母大写函数名', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'formula', formula: 'Sqrt(a)' }
+        ];
+        const result = calculateRow({ a: 16 }, metrics);
+        expect(result.values['b']).toBe(4);
+    });
+
+    it('Max(a, b) 首字母大写函数名', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'input' },
+            { name: 'c', type: 'formula', formula: 'Max(a, b)' }
+        ];
+        const result = calculateRow({ a: 10, b: 20 }, metrics);
+        expect(result.values['c']).toBe(20);
+    });
+
+    it('MAX(a, b) 全大写函数名', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'input' },
+            { name: 'c', type: 'formula', formula: 'MAX(a, b)' }
+        ];
+        const result = calculateRow({ a: 10, b: 20 }, metrics);
+        expect(result.values['c']).toBe(20);
+    });
+
+    it('pi * a 小写常量名', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'formula', formula: 'pi * a' }
+        ];
+        const result = calculateRow({ a: 2 }, metrics);
+        expect(result.values['b']).toBeCloseTo(2 * Math.PI);
+    });
+
+    it('Pi * a 首字母大写常量名', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'formula', formula: 'Pi * a' }
+        ];
+        const result = calculateRow({ a: 2 }, metrics);
+        expect(result.values['b']).toBeCloseTo(2 * Math.PI);
+    });
+
+    it('Math.max(a, b) 带 Math 前缀的 max', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'input' },
+            { name: 'c', type: 'formula', formula: 'Math.max(a, b)' }
+        ];
+        const result = calculateRow({ a: 10, b: 20 }, metrics);
+        expect(result.values['c']).toBe(20);
+    });
+
+    it('math.abs(a) 小写 math 前缀的 abs', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'formula', formula: 'math.abs(a)' }
+        ];
+        const result = calculateRow({ a: -5 }, metrics);
+        expect(result.values['b']).toBe(5);
+    });
+
+    it('ABS(a) 全大写函数名', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'formula', formula: 'ABS(a)' }
+        ];
+        const result = calculateRow({ a: -5 }, metrics);
+        expect(result.values['b']).toBe(5);
+    });
+
+    it('混合大小写：Math.Sqrt(a) + math.ABS(b)', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'input' },
+            { name: 'c', type: 'formula', formula: 'Math.Sqrt(a) + math.ABS(b)' }
+        ];
+        const result = calculateRow({ a: 16, b: -3 }, metrics);
+        expect(result.values['c']).toBe(4 + 3);
+    });
+
+    it('extractVariableNames 正确识别 Math.sqrt(a) 中的 a', () => {
+        const metrics = [
+            { name: 'a', type: 'input' }
+        ];
+        const vars = extractVariableNames('Math.sqrt(a)', metrics);
+        expect(vars).toEqual(['a']);
+    });
+
+    it('extractVariableNames 正确识别 math.abs(a) 中的 a', () => {
+        const metrics = [
+            { name: 'a', type: 'input' }
+        ];
+        const vars = extractVariableNames('math.abs(a)', metrics);
+        expect(vars).toEqual(['a']);
+    });
+
+    it('extractVariableNames 正确识别 SQRT(a) 中的 a', () => {
+        const metrics = [
+            { name: 'a', type: 'input' }
+        ];
+        const vars = extractVariableNames('SQRT(a)', metrics);
+        expect(vars).toEqual(['a']);
+    });
+
+    it('extractVariableNames 正确识别 pi * a 中的 a', () => {
+        const metrics = [
+            { name: 'a', type: 'input' }
+        ];
+        const vars = extractVariableNames('pi * a', metrics);
+        expect(vars).toEqual(['a']);
+    });
+
+    it('Math.pow(a, b) 带 Math 前缀的 pow', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'input' },
+            { name: 'c', type: 'formula', formula: 'Math.pow(a, b)' }
+        ];
+        const result = calculateRow({ a: 2, b: 3 }, metrics);
+        expect(result.values['c']).toBe(8);
+    });
+
+    it('sin(a) + cos(b) + tan(c) 三角函数大小写变体', () => {
+        const metrics = [
+            { name: 'a', type: 'input' },
+            { name: 'b', type: 'input' },
+            { name: 'c', type: 'input' },
+            { name: 'result', type: 'formula', formula: 'SIN(a) + COS(b) + TAN(c)' }
+        ];
+        const result = evaluateFormula('SIN(a) + COS(b) + TAN(c)', { a: 0, b: 0, c: 0 }, metrics);
+        expect(result.success).toBe(true);
+        expect(result.value).toBeCloseTo(1);
+    });
+});
